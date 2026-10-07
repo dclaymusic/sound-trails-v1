@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Sound Trails</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --paper: #f8fafc;
+      --panel: #ffffff;
+      --line: #dbe3ec;
+      --trail: #1f2937;
+      --playhead: #e85d3f;
+      --button: #27364a;
+      --button-text: #ffffff;
+      --grid: rgba(31, 41, 55, 0.08);
+      --accent-soft: rgba(232, 93, 63, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overscroll-behavior: none;
+    }
+
+    body {
+      padding: max(12px, env(safe-area-inset-top))
+               max(12px, env(safe-area-inset-right))
+               max(12px, env(safe-area-inset-bottom))
+               max(12px, env(safe-area-inset-left));
+    }
+
+    .app {
+      width: min(1200px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 38px);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    button {
+      min-height: 48px;
+      min-width: 112px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--button);
+      color: var(--button-text);
+      font: inherit;
+      font-weight: 750;
+      font-size: 17px;
+      padding: 0 18px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    button:active { transform: translateY(1px); }
+    button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
+
+    .sound-space {
+      position: relative;
+      width: 100%;
+      min-height: 300px;
+      height: clamp(300px, 68vh, 720px);
+      background: var(--panel);
+      border: 2px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    .axis-label {
+      position: absolute;
+      left: 12px;
+      z-index: 2;
+      pointer-events: none;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      background: rgba(255,255,255,0.82);
+      padding: 3px 7px;
+      border-radius: 8px;
+      backdrop-filter: blur(3px);
+    }
+
+    .axis-label.top { top: 10px; }
+    .axis-label.bottom { bottom: 10px; }
+
+    .time-label {
+      position: absolute;
+      bottom: 9px;
+      z-index: 2;
+      pointer-events: none;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      background: rgba(255,255,255,0.82);
+      padding: 3px 6px;
+      border-radius: 7px;
+    }
+
+    .time-label.start { left: 50px; }
+    .time-label.end { right: 10px; }
+
+    .hint {
+      margin: 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .rotate-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #f8fafc;
+      color: #1f2937;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 32px;
+    }
+
+    .rotate-card {
+      max-width: 360px;
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+    }
+
+    .phone-icon {
+      width: 64px;
+      height: 96px;
+      border: 5px solid currentColor;
+      border-radius: 13px;
+      transform: rotate(90deg);
+      position: relative;
+    }
+
+    .phone-icon::after {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 4px;
+      left: 50%;
+      bottom: 5px;
+      transform: translateX(-50%);
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .rotate-card strong { font-size: 24px; }
+    .rotate-card span { color: #6b7280; font-size: 16px; line-height: 1.4; }
+
+    @media (max-height: 520px) and (orientation: landscape) {
+      body { padding-top: 8px; padding-bottom: 8px; }
+      .app { gap: 8px; }
+      .sound-space { height: calc(100vh - 90px); min-height: 250px; }
+      h1 { font-size: 24px; }
+      button { min-height: 44px; font-size: 16px; }
+      .hint { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button:active { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="rotate-screen" id="rotateScreen" aria-live="polite">
+    <div class="rotate-card">
+      <div class="phone-icon" aria-hidden="true"></div>
+      <strong>Turn your device sideways</strong>
+      <span>Sound Trails is designed to be used in landscape mode.</span>
+    </div>
+  </div>
+
+  <main class="app" id="app">
+    <div class="topbar">
+      <h1>Sound Trails</h1>
+      <div class="controls">
+        <button type="button" id="playPause">Play</button>
+        <button type="button" id="clear">Clear</button>
+      </div>
+    </div>
+
+    <section class="sound-space" id="soundSpace" aria-label="Sound drawing area">
+      <canvas id="canvas" aria-label="Draw sound trails here with a finger, stylus, or mouse"></canvas>
+      <div class="axis-label top">1000 Hz</div>
+      <div class="axis-label bottom">100 Hz</div>
+      <div class="time-label start">0 sec</div>
+      <div class="time-label end">10 sec</div>
+    </section>
+
+    <p class="hint">Draw anywhere. Higher shapes sound higher; lower shapes sound lower.</p>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const soundSpace = document.getElementById("soundSpace");
+      const playPauseButton = document.getElementById("playPause");
+      const clearButton = document.getElementById("clear");
+      const rotateScreen = document.getElementById("rotateScreen");
+
+      const DURATION = 10;
+      const MIN_HZ = 100;
+      const MAX_HZ = 1000;
+      const MAX_VOICES = 10;
+
+      let strokes = [];
+      let activeStroke = null;
+      let drawing = false;
+      let pointerId = null;
+
+      let audioCtx = null;
+      let masterGain = null;
+      let voices = [];
+
+      let isPlaying = false;
+      let position = 0;
+      let playStartAudioTime = 0;
+      let animationFrame = null;
+
+      let cssWidth = 1;
+      let cssHeight = 1;
+      let dpr = 1;
+
+      function isTouchDevice() {
+        return navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches;
+      }
+
+      function updateOrientationGate() {
+        const portraitTouch = isTouchDevice() && window.innerHeight > window.innerWidth;
+        rotateScreen.style.display = portraitTouch ? "flex" : "none";
+        document.body.style.overflow = portraitTouch ? "hidden" : "";
+        if (portraitTouch && isPlaying) pausePlayback();
+      }
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        cssWidth = Math.max(1, rect.width);
+        cssHeight = Math.max(1, rect.height);
+        dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+
+        canvas.width = Math.round(cssWidth * dpr);
+        canvas.height = Math.round(cssHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawScene();
+      }
+
+      function frequencyFromY(yNorm) {
+        const clamped = Math.max(0, Math.min(1, yNorm));
+        return MAX_HZ - clamped * (MAX_HZ - MIN_HZ);
+      }
+
+      function normalizedPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+          y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+        };
+      }
+
+      function addPoint(point) {
+        if (!activeStroke) return;
+        const last = activeStroke[activeStroke.length - 1];
+        if (!last) {
+          activeStroke.push(point);
+          return;
+        }
+        const dx = (point.x - last.x) * cssWidth;
+        const dy = (point.y - last.y) * cssHeight;
+        if (Math.hypot(dx, dy) >= 2) activeStroke.push(point);
+      }
+
+      function beginStroke(event) {
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        event.preventDefault();
+
+        drawing = true;
+        pointerId = event.pointerId;
+        canvas.setPointerCapture(pointerId);
+
+        activeStroke = [normalizedPoint(event)];
+        strokes.push(activeStroke);
+        drawScene();
+      }
+
+      function moveStroke(event) {
+        if (!drawing || event.pointerId !== pointerId) return;
+        event.preventDefault();
+        addPoint(normalizedPoint(event));
+        drawScene();
+      }
+
+      function endStroke(event) {
+        if (!drawing || event.pointerId !== pointerId) return;
+        event.preventDefault();
+        addPoint(normalizedPoint(event));
+
+        drawing = false;
+        pointerId = null;
+
+        if (activeStroke && activeStroke.length === 1) {
+          const p = activeStroke[0];
+          activeStroke.push({ x: Math.min(1, p.x + 0.001), y: p.y });
+        }
+
+        activeStroke = null;
+        drawScene();
+      }
+
+      function drawGrid() {
+        ctx.save();
+        ctx.strokeStyle = "rgba(31, 41, 55, 0.08)";
+        ctx.lineWidth = 1;
+
+        for (let i = 1; i < 10; i++) {
+          const x = (i / 10) * cssWidth;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, cssHeight);
+          ctx.stroke();
+        }
+
+        for (let i = 1; i < 9; i++) {
+          const y = (i / 9) * cssHeight;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(cssWidth, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawStrokes() {
+        ctx.save();
+        ctx.strokeStyle = "#1f2937";
+        ctx.fillStyle = "#1f2937";
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = Math.max(4, Math.min(9, cssHeight * 0.012));
+
+        for (const stroke of strokes) {
+          if (!stroke.length) continue;
+          ctx.beginPath();
+          ctx.moveTo(stroke[0].x * cssWidth, stroke[0].y * cssHeight);
+          for (let i = 1; i < stroke.length; i++) {
+            ctx.lineTo(stroke[i].x * cssWidth, stroke[i].y * cssHeight);
+          }
+          ctx.stroke();
+
+          if (stroke.length === 1) {
+            ctx.beginPath();
+            ctx.arc(stroke[0].x * cssWidth, stroke[0].y * cssHeight, ctx.lineWidth / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
+      function drawPlayhead() {
+        if (!isPlaying && position <= 0) return;
+        const x = position * cssWidth;
+
+        ctx.save();
+        ctx.fillStyle = "rgba(232, 93, 63, 0.12)";
+        ctx.fillRect(Math.max(0, x - 10), 0, 20, cssHeight);
+
+        ctx.strokeStyle = "#e85d3f";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, cssHeight);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawScene() {
+        ctx.clearRect(0, 0, cssWidth, cssHeight);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, cssWidth, cssHeight);
+        drawGrid();
+        drawStrokes();
+        drawPlayhead();
+      }
+
+      function intersectionsAtX(xNorm) {
+        const ys = [];
+        const xTolerance = 0.0018;
+
+        for (const stroke of strokes) {
+          if (stroke.length < 2) continue;
+
+          for (let i = 1; i < stroke.length; i++) {
+            const a = stroke[i - 1];
+            const b = stroke[i];
+            const minX = Math.min(a.x, b.x);
+            const maxX = Math.max(a.x, b.x);
+
+            if (xNorm < minX - xTolerance || xNorm > maxX + xTolerance) continue;
+
+            const dx = b.x - a.x;
+
+            if (Math.abs(dx) < 0.00015) {
+              if (Math.abs(xNorm - a.x) <= xTolerance) {
+                ys.push((a.y + b.y) / 2);
+              }
+              continue;
+            }
+
+            const t = (xNorm - a.x) / dx;
+            if (t >= 0 && t <= 1) {
+              ys.push(a.y + (b.y - a.y) * t);
+            }
+          }
+        }
+
+        ys.sort((a, b) => a - b);
+
+        const deduped = [];
+        const minSeparation = 0.018;
+        for (const y of ys) {
+          if (!deduped.length || Math.abs(y - deduped[deduped.length - 1]) > minSeparation) {
+            deduped.push(y);
+          }
+        }
+
+        if (deduped.length <= MAX_VOICES) return deduped;
+
+        const sampled = [];
+        for (let i = 0; i < MAX_VOICES; i++) {
+          const index = Math.round(i * (deduped.length - 1) / (MAX_VOICES - 1));
+          sampled.push(deduped[index]);
+        }
+        return sampled;
+      }
+
+      async function ensureAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return false;
+
+          audioCtx = new AudioContextClass();
+          masterGain = audioCtx.createGain();
+          masterGain.gain.value = 0.18;
+          masterGain.connect(audioCtx.destination);
+
+          for (let i = 0; i < MAX_VOICES; i++) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = "sine";
+            osc.frequency.value = 440;
+            gain.gain.value = 0;
+
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start();
+
+            voices.push({ osc, gain, active: false, currentFreq: null });
+          }
+        }
+
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+        return true;
+      }
+
+      function silenceVoices(immediate = false) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+
+        for (const voice of voices) {
+          voice.gain.gain.cancelScheduledValues(now);
+          if (immediate) {
+            voice.gain.gain.setValueAtTime(0, now);
+          } else {
+            const current = Math.max(0.0001, voice.gain.gain.value);
+            voice.gain.gain.setValueAtTime(current, now);
+            voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+            voice.gain.gain.setValueAtTime(0, now + 0.04);
+          }
+          voice.active = false;
+          if (immediate) voice.currentFreq = null;
+        }
+      }
+
+      function pitchDistance(a, b) {
+        // Distance in semitones. This is a better perceptual measure than raw Hz.
+        return Math.abs(12 * Math.log2(a / b));
+      }
+
+      function assignPitchesToVoices(frequencies) {
+        const assignments = new Map();
+        const remainingVoiceIndexes = new Set(voices.map((_, i) => i));
+        const remainingPitchIndexes = new Set(frequencies.map((_, i) => i));
+
+        // First keep currently sounding voices attached to the nearest continuing pitch.
+        // We repeatedly choose the globally closest voice/pitch pair, which prevents
+        // existing tones from all shifting when a new line appears between them.
+        while (true) {
+          let bestVoice = -1;
+          let bestPitch = -1;
+          let bestDistance = Infinity;
+
+          for (const vi of remainingVoiceIndexes) {
+            const voice = voices[vi];
+            if (!voice.active || !voice.currentFreq) continue;
+
+            for (const pi of remainingPitchIndexes) {
+              const distance = pitchDistance(voice.currentFreq, frequencies[pi]);
+              if (distance < bestDistance) {
+                bestDistance = distance;
+                bestVoice = vi;
+                bestPitch = pi;
+              }
+            }
+          }
+
+          if (bestVoice < 0 || bestPitch < 0) break;
+
+          assignments.set(bestVoice, frequencies[bestPitch]);
+          remainingVoiceIndexes.delete(bestVoice);
+          remainingPitchIndexes.delete(bestPitch);
+        }
+
+        // Any genuinely new pitches get unused/silent oscillators.
+        for (const pi of remainingPitchIndexes) {
+          const vi = remainingVoiceIndexes.values().next().value;
+          if (vi === undefined) break;
+          assignments.set(vi, frequencies[pi]);
+          remainingVoiceIndexes.delete(vi);
+        }
+
+        return assignments;
+      }
+
+      function updateAudioAtPosition(xNorm) {
+        if (!audioCtx) return;
+
+        const frequencies = intersectionsAtX(xNorm).map(frequencyFromY);
+        const assignments = assignPitchesToVoices(frequencies);
+        const now = audioCtx.currentTime;
+
+        // Slightly reduce each voice as polyphony grows so overlapping lines
+        // stay smooth instead of becoming harsh or clipping.
+        const voiceLevel = frequencies.length
+          ? Math.min(0.115, 0.20 / Math.sqrt(frequencies.length))
+          : 0;
+
+        for (let i = 0; i < voices.length; i++) {
+          const voice = voices[i];
+          const targetFrequency = assignments.get(i);
+
+          if (targetFrequency !== undefined) {
+            // Let an existing oscillator glide gently rather than jump.
+            // Newly entering lines also fade in instead of appearing abruptly.
+            voice.osc.frequency.setTargetAtTime(targetFrequency, now, 0.020);
+            voice.gain.gain.setTargetAtTime(voiceLevel, now, voice.active ? 0.012 : 0.025);
+            voice.currentFreq = targetFrequency;
+            voice.active = true;
+          } else {
+            // A short release removes clicks when a line ends/leaves the playhead.
+            voice.gain.gain.setTargetAtTime(0.0001, now, 0.035);
+            voice.active = false;
+          }
+        }
+      }
+
+      function animationLoop() {
+        if (!isPlaying || !audioCtx) return;
+
+        const elapsed = audioCtx.currentTime - playStartAudioTime;
+        position = Math.max(0, Math.min(1, elapsed / DURATION));
+
+        updateAudioAtPosition(position);
+        drawScene();
+
+        if (position >= 1) {
+          isPlaying = false;
+          playPauseButton.textContent = "Play";
+          silenceVoices();
+          position = 0;
+          setTimeout(drawScene, 50);
+          return;
+        }
+
+        animationFrame = requestAnimationFrame(animationLoop);
+      }
+
+      async function startPlayback() {
+        const ok = await ensureAudio();
+        if (!ok) return;
+
+        if (position >= 1) position = 0;
+
+        isPlaying = true;
+        playPauseButton.textContent = "Pause";
+        playStartAudioTime = audioCtx.currentTime - position * DURATION;
+
+        cancelAnimationFrame(animationFrame);
+        animationFrame = requestAnimationFrame(animationLoop);
+      }
+
+      function pausePlayback() {
+        if (!isPlaying) return;
+
+        isPlaying = false;
+        playPauseButton.textContent = "Play";
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+        silenceVoices();
+        drawScene();
+      }
+
+      function clearAll() {
+        pausePlayback();
+        strokes = [];
+        activeStroke = null;
+        drawing = false;
+        pointerId = null;
+        position = 0;
+        silenceVoices(true);
+        drawScene();
+      }
+
+      playPauseButton.addEventListener("click", () => {
+        if (isPlaying) pausePlayback();
+        else startPlayback();
+      });
+
+      clearButton.addEventListener("click", clearAll);
+
+      canvas.addEventListener("pointerdown", beginStroke);
+      canvas.addEventListener("pointermove", moveStroke);
+      canvas.addEventListener("pointerup", endStroke);
+      canvas.addEventListener("pointercancel", endStroke);
+
+      window.addEventListener("resize", () => {
+        updateOrientationGate();
+        resizeCanvas();
+      });
+
+      window.addEventListener("orientationchange", () => {
+        setTimeout(() => {
+          updateOrientationGate();
+          resizeCanvas();
+        }, 150);
+      });
+
+      if ("ResizeObserver" in window) {
+        new ResizeObserver(resizeCanvas).observe(soundSpace);
+      }
+
+      updateOrientationGate();
+      resizeCanvas();
+    })();
+  </script>
+</body>
+</html>
